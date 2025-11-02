@@ -47,8 +47,11 @@ class BranchPredictor{
         uint32_t get_table_index(unsigned long, uint32_t, unsigned long);
 
         //functions to update the predictors
-        void update_bimodal(unsigned long, char);
-        void update_gshare(unsigned long, char);
+        uint32_t get_bimodal_index(unsigned long);
+        void update_bimodal(char,uint32_t);
+        uint32_t get_gshare_index(unsigned long);
+        void update_gshare(char,uint32_t);
+        
         void update_hybrid(unsigned long, char);
 
         //main function that performs prediction

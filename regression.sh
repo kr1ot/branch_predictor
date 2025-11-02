@@ -32,3 +32,11 @@ diff -iuw output.txt proj2-validation/val_gshare_3.txt
 #run 8
 ./sim gshare 10 6 perl_trace.txt > output.txt
 diff -iuw output.txt proj2-validation/val_gshare_4.txt
+
+#run 9
+./sim hybrid 8 14 10 5 gcc_trace.txt > output.txt
+diff -iuw output.txt proj2-validation/val_hybrid_1.txt
+
+#run 10
+./sim hybrid 5 10 7 5 jpeg_trace.txt > output.txt
+diff -iuw output.txt proj2-validation/val_hybrid_2.txt

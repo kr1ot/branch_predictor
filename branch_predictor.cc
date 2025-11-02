@@ -35,14 +35,15 @@ void BranchPredictor::create_predictor_table(bp_params param)
     //create the predictor table
     if (hybrid_predictor == true)
     {
+        unsigned long size = pow(2,param.K);
         //create the chooser table
-        hybrid_chooser_table = new uint8_t[param.K];
+        hybrid_chooser_table = new uint8_t[size];
         //initialize the table with "1"
-        for (index=0; index<param.K;index++)
+        for (index=0; index<size;index++)
         {
             hybrid_chooser_table[index] = 1;
         }
-        mask_hybrid = pow(2,param.K) - 1;
+        mask_hybrid = size - 1;
     }
     
     if (gshare_predictor == true)
@@ -108,36 +109,31 @@ char BranchPredictor::is_correct_prediction(uint8_t counter_value, char actual_o
     if (predicted_outcome == actual_outcome) return true;
     else return false;
 }
-void BranchPredictor::update_bimodal(unsigned long pc,char actual_outcome)
+uint32_t BranchPredictor::get_bimodal_index(unsigned long pc)
 {
     uint32_t index;
+    index = get_table_index(pc,mask_bimodal,0);
+    return index;
+}
+
+void BranchPredictor::update_bimodal(char actual_outcome, uint32_t index)
+{
     uint8_t count_val_to_update_with;
     int val_to_add_to_based_on_outcome;
-    bool is_correct_predict;
-    index = get_table_index(pc,mask_bimodal,0);
-    is_correct_predict = is_correct_prediction(bimodal_predictor_table[index],actual_outcome);
 
     if (actual_outcome == 't') val_to_add_to_based_on_outcome = 1;
     else val_to_add_to_based_on_outcome = -1;
 
-    if (is_correct_predict == false)
-    {
-        count_mispredictions += 1;
-    }
     //update the counter value
     count_val_to_update_with = clip(bimodal_predictor_table[index],val_to_add_to_based_on_outcome);
     bimodal_predictor_table[index] = count_val_to_update_with;
 }
 
-void BranchPredictor::update_gshare(unsigned long pc,char actual_outcome)
+uint32_t BranchPredictor::get_gshare_index(unsigned long pc)
 {
     uint32_t pc_bhr_val;
     uint32_t index_from_pc;
     uint32_t index;
-    uint8_t count_val_to_update_with;
-    int val_to_add_to_based_on_outcome;
-    bool is_correct_predict;
-    uint8_t outcome_to_store_in_bhr;
 
     //get only the bits from pc that will be XORed to bhr
     pc_bhr_val = get_table_index(pc,mask_gshare_bhr,(param.M1 - param.N));
@@ -147,32 +143,120 @@ void BranchPredictor::update_gshare(unsigned long pc,char actual_outcome)
     index_from_pc = get_table_index(pc,mask_gshare,0);
     //calculate the final index
     index = (pc_bhr_val << (param.M1 - param.N)) | index_from_pc;
-    is_correct_predict = is_correct_prediction(gshare_predictor_table[index],actual_outcome);
-    
-    if (is_correct_predict == false)
-    {
-        count_mispredictions += 1;
-    }
+    return index;
+}
 
-    if (actual_outcome == 't') 
-    {
-        val_to_add_to_based_on_outcome = 1;
-        outcome_to_store_in_bhr = 1;
-    }
-    else 
-    {
-        val_to_add_to_based_on_outcome = -1;
-        outcome_to_store_in_bhr = 0;
-    }
+void BranchPredictor::update_gshare(char actual_outcome, uint32_t index)
+{
+    uint8_t count_val_to_update_with;
+    int val_to_add_to_based_on_outcome;
 
+    if (actual_outcome == 't') val_to_add_to_based_on_outcome = 1;
+    else val_to_add_to_based_on_outcome = -1;
 
     //update the counter value
     count_val_to_update_with = clip(gshare_predictor_table[index],val_to_add_to_based_on_outcome);
     gshare_predictor_table[index] = count_val_to_update_with;
+}
 
-    //update the bhr register
-    //outcome is right shifted into bhr
-    bhr_reg = (bhr_reg >> 1) | (outcome_to_store_in_bhr << (param.N - 1));
+void BranchPredictor::update_hybrid(unsigned long pc,char actual_outcome)
+{
+    uint32_t chooser_index = 0;
+    uint32_t bimodal_index = 0;
+    uint32_t gshare_index = 0;
+
+    uint8_t count_val_to_update_with;
+    int val_to_add_to_based_on_outcome;
+
+    bool is_bimodal_prediction_correct = false;
+    bool is_gshare_prediction_correct = false;
+    bool choose_bimodal = false;
+
+    if (hybrid_predictor == true)
+    {   
+        //get the index for all the predictor tables
+        chooser_index = get_table_index(pc,mask_hybrid,0);
+        bimodal_index = get_bimodal_index(pc);
+        gshare_index = get_gshare_index(pc);
+
+        //perform prediction for both gshare and bimodal predictors
+        is_bimodal_prediction_correct = is_correct_prediction(bimodal_predictor_table[bimodal_index],actual_outcome);
+        is_gshare_prediction_correct = is_correct_prediction(gshare_predictor_table[gshare_index],actual_outcome);
+
+
+        //based on chooser index, choose the predictor
+        if (hybrid_chooser_table[chooser_index] >= 2) 
+        {
+            choose_bimodal = false;
+        }
+        else 
+        {
+            choose_bimodal = true;
+        }
+
+        //update the chooser table index based on the predictor results
+
+        //only when bimodal is correct
+        if ((is_bimodal_prediction_correct == true) & (is_gshare_prediction_correct == false)) {
+            //decrement the value
+            val_to_add_to_based_on_outcome = -1;
+        }
+        //only when gshare is correct
+        else if ((is_bimodal_prediction_correct == false) & (is_gshare_prediction_correct == true)){
+            //increment the value
+            val_to_add_to_based_on_outcome = 1;
+        }
+        // no change
+        else val_to_add_to_based_on_outcome = 0;
+
+        count_val_to_update_with = clip(hybrid_chooser_table[chooser_index],val_to_add_to_based_on_outcome);
+        hybrid_chooser_table[chooser_index] = count_val_to_update_with;
+    }
+
+    else
+    {
+        if (gshare_predictor == true) 
+        {
+            choose_bimodal = false;
+            gshare_index = get_gshare_index(pc);
+            is_gshare_prediction_correct = is_correct_prediction(gshare_predictor_table[gshare_index],actual_outcome);
+        }
+        else 
+        {
+            choose_bimodal = true;
+            bimodal_index = get_bimodal_index(pc);
+            is_bimodal_prediction_correct = is_correct_prediction(bimodal_predictor_table[bimodal_index],actual_outcome);
+        }
+    }
+
+    //update the values of predictor based on what was chosen
+    //if bimodal chosen
+    if (choose_bimodal == true)
+    {   
+        //count mispredictions
+        if (is_bimodal_prediction_correct == false) count_mispredictions += 1;
+        update_bimodal(actual_outcome,bimodal_index);
+    }
+    //gshare chosen
+    else
+    {
+        //count mispredictions
+        if (is_gshare_prediction_correct == false) count_mispredictions += 1;
+        update_gshare(actual_outcome,gshare_index);
+    }
+
+
+    //if gshare predictor exists, update the bhr
+    if (gshare_predictor == true)
+    {
+        //update the bhr register
+        //outcome is right shifted into bhr
+        if (param.N != 0)
+        {
+            if (actual_outcome == 't') bhr_reg = (bhr_reg >> 1) | (1 << (param.N - 1));
+            else bhr_reg = (bhr_reg >> 1) | (0 << (param.N - 1));
+        }        
+    }
     
 }
 
@@ -180,14 +264,23 @@ void BranchPredictor::update_gshare(unsigned long pc,char actual_outcome)
 void BranchPredictor::call_predictor(unsigned long pc, char actual_outcome)
 {
     count_total_predictions += 1;
-    if (bimodal_predictor == true) update_bimodal(pc,actual_outcome);
-    if (gshare_predictor == true) update_gshare(pc,actual_outcome);
-    //if (hybrid_predictor == true) update_hybrid(pc,actual_outcome);
+    update_hybrid(pc,actual_outcome);
 }
 
 
 void BranchPredictor::print_contents()
 {
+    if(hybrid_predictor == true)
+    {
+        printf("FINAL CHOOSER CONTENTS\n");
+        unsigned long size = pow(2,param.K);
+        for (unsigned long index=0; index < size; index++)
+        {
+            printf(" %lu    %d\n",index,hybrid_chooser_table[index]);
+        }
+    }
+
+
     if(gshare_predictor == true)
     {
         printf("FINAL GSHARE CONTENTS\n");
