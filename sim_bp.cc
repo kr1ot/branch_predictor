@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sim_bp.h"
+#include "branch_predictor.h"
 
 /*  argc holds the number of command line arguments
     argv[] holds the commands themselves
@@ -84,19 +85,30 @@ int main (int argc, char* argv[])
         printf("Error: Unable to open file %s\n", trace_file);
         exit(EXIT_FAILURE);
     }
-    
+
+    BranchPredictor *bp = new BranchPredictor(params);
     char str[2];
     while(fscanf(FP, "%lx %s", &addr, str) != EOF)
     {
         
         outcome = str[0];
-        if (outcome == 't')
-            printf("%lx %s\n", addr, "t");           // Print and test if file is read correctly
-        else if (outcome == 'n')
-            printf("%lx %s\n", addr, "n");          // Print and test if file is read correctly
+        bp->call_predictor(addr>>2,outcome);
+        // if (outcome == 't')
+        //     printf("%lx %s\n", addr, "t");           // Print and test if file is read correctly
+        // else if (outcome == 'n')
+        //     printf("%lx %s\n", addr, "n");          // Print and test if file is read correctly
         /*************************************
             Add branch predictor code here
         **************************************/
+
     }
+    printf("OUTPUT\n");
+    printf("number of predictions:    %u\n",bp->count_total_predictions);
+    printf("number of mispredictions: %u\n",bp->count_mispredictions);
+    double misprediction_rate;
+    misprediction_rate = ((double)bp->count_mispredictions/(double)bp->count_total_predictions) * 100;
+    printf("misprediction rate:       %.2f",misprediction_rate);
+    printf("%%\n");
+    bp->print_contents();
     return 0;
 }
