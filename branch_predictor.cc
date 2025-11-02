@@ -47,15 +47,18 @@ void BranchPredictor::create_predictor_table(bp_params param)
     
     if (gshare_predictor == true)
     {
+        unsigned long size = pow(2,param.M1);
         //create the chooser table
-        gshare_predictor_table = new uint8_t[param.M1];
+        gshare_predictor_table = new uint8_t[size];
         //initialize the table with "2"
-        for (index=0; index<param.M1;index++)
+        for (index=0; index<size;index++)
         {
             gshare_predictor_table[index] = 2;
         }
-        mask_gshare = pow(2,param.M1) - 1;
+        mask_gshare = size - 1;
         mask_gshare_bhr = mask_gshare >> (param.M1 - param.N);
+        //get only the m-n bits
+        mask_gshare = pow(2,(param.M1 - param.N)) - 1;
     }
 
     if (bimodal_predictor == true)
@@ -73,10 +76,10 @@ void BranchPredictor::create_predictor_table(bp_params param)
 
 }
 
-uint32_t BranchPredictor::get_table_index(unsigned long pc, uint32_t mask, unsigned long bits)
+uint32_t BranchPredictor::get_table_index(unsigned long pc, uint32_t mask, unsigned long shift_pc_bits)
 {
     uint32_t index;
-    index = (uint32_t)((pc & (unsigned long)mask) >> bits);
+    index = (uint32_t)((pc >> shift_pc_bits) & mask);
     return index;
 }
 
@@ -120,22 +123,81 @@ void BranchPredictor::update_bimodal(unsigned long pc,char actual_outcome)
     if (is_correct_predict == false)
     {
         count_mispredictions += 1;
-        // printf("**mispredictions = %u\n",count_mispredictions); 
     }
     //update the counter value
     count_val_to_update_with = clip(bimodal_predictor_table[index],val_to_add_to_based_on_outcome);
     bimodal_predictor_table[index] = count_val_to_update_with;
 }
 
+void BranchPredictor::update_gshare(unsigned long pc,char actual_outcome)
+{
+    uint32_t pc_bhr_val;
+    uint32_t index_from_pc;
+    uint32_t index;
+    uint8_t count_val_to_update_with;
+    int val_to_add_to_based_on_outcome;
+    bool is_correct_predict;
+    uint8_t outcome_to_store_in_bhr;
+
+    //get only the bits from pc that will be XORed to bhr
+    pc_bhr_val = get_table_index(pc,mask_gshare_bhr,(param.M1 - param.N));
+    //XOR pc and BHR value
+    pc_bhr_val = pc_bhr_val ^ bhr_reg;
+    //get the remaining m-n bits from pc 
+    index_from_pc = get_table_index(pc,mask_gshare,0);
+    //calculate the final index
+    index = (pc_bhr_val << (param.M1 - param.N)) | index_from_pc;
+    is_correct_predict = is_correct_prediction(gshare_predictor_table[index],actual_outcome);
+    
+    if (is_correct_predict == false)
+    {
+        count_mispredictions += 1;
+    }
+
+    if (actual_outcome == 't') 
+    {
+        val_to_add_to_based_on_outcome = 1;
+        outcome_to_store_in_bhr = 1;
+    }
+    else 
+    {
+        val_to_add_to_based_on_outcome = -1;
+        outcome_to_store_in_bhr = 0;
+    }
+
+
+    //update the counter value
+    count_val_to_update_with = clip(gshare_predictor_table[index],val_to_add_to_based_on_outcome);
+    gshare_predictor_table[index] = count_val_to_update_with;
+
+    //update the bhr register
+    //outcome is right shifted into bhr
+    bhr_reg = (bhr_reg >> 1) | (outcome_to_store_in_bhr << (param.N - 1));
+    
+}
+
+
 void BranchPredictor::call_predictor(unsigned long pc, char actual_outcome)
 {
     count_total_predictions += 1;
-    update_bimodal(pc,actual_outcome);
+    if (bimodal_predictor == true) update_bimodal(pc,actual_outcome);
+    if (gshare_predictor == true) update_gshare(pc,actual_outcome);
+    //if (hybrid_predictor == true) update_hybrid(pc,actual_outcome);
 }
 
 
 void BranchPredictor::print_contents()
 {
+    if(gshare_predictor == true)
+    {
+        printf("FINAL GSHARE CONTENTS\n");
+        unsigned long size = pow(2,param.M1);
+        for (unsigned long index=0; index < size; index++)
+        {
+            printf(" %lu    %d\n",index,gshare_predictor_table[index]);
+        }
+    }
+
     if(bimodal_predictor == true)
     {
         printf("FINAL BIMODAL CONTENTS\n");
@@ -144,10 +206,6 @@ void BranchPredictor::print_contents()
         {
             printf(" %lu    %d\n",index,bimodal_predictor_table[index]);
         }
-    }
-    else if(gshare_predictor == true)
-    {
-        printf("FINAL GSHARE CONTENTS");
     }
     
 }

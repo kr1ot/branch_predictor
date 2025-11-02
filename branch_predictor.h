@@ -16,7 +16,7 @@ class BranchPredictor{
         uint8_t *hybrid_chooser_table = nullptr;
 
         //bhr register for gshare
-        uint32_t bhr_reg=0;
+        unsigned long bhr_reg=0;
         //define masks for all the predictors to get index for tables
         uint32_t mask_bimodal=0;
         uint32_t mask_gshare_bhr=0; //mask for bhr
